@@ -1,0 +1,90 @@
+name: Build self-hosted image
+
+# Manual runs only. Upstream PostHog changes reach the fork, never this repository,
+# so they cannot start a run here or send a notification.
+on:
+    workflow_dispatch:
+        inputs:
+            ref:
+                description: Branch, tag or commit of the fork to build
+                required: true
+                default: master
+
+concurrency:
+    group: ${{ github.workflow }}
+    cancel-in-progress: false
+
+permissions:
+    contents: read
+
+env:
+    SOURCE_REPOSITORY: moramin/posthog
+    IMAGE: docker.io/${{ vars.DOCKERHUB_USERNAME }}/posthog-selfhost
+
+jobs:
+    build:
+        name: Build and push
+        runs-on: ubuntu-24.04
+        timeout-minutes: 180
+        steps:
+            - name: Check the Docker Hub settings
+              env:
+                  DOCKERHUB_USERNAME: ${{ vars.DOCKERHUB_USERNAME }}
+                  DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+              run: |
+                  if [ -z "$DOCKERHUB_USERNAME" ] || [ -z "$DOCKERHUB_TOKEN" ]; then
+                      echo "::error::Set the DOCKERHUB_USERNAME variable and the DOCKERHUB_TOKEN secret on this repository."
+                      exit 1
+                  fi
+
+            # The image build needs far more than the runner's default free disk.
+            - name: Free disk space
+              run: |
+                  sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache /usr/local/share/boost /usr/local/.ghcup
+                  sudo docker image prune --all --force
+                  df -h /
+
+            - name: Check out the fork
+              uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+              with:
+                  repository: ${{ env.SOURCE_REPOSITORY }}
+                  ref: ${{ inputs.ref }}
+                  persist-credentials: false
+
+            - name: Name the tags
+              id: tags
+              run: |
+                  sha="$(git rev-parse HEAD)"
+                  echo "sha=$sha" >> "$GITHUB_OUTPUT"
+                  echo "dated=sync-$(date -u +%Y%m%d)-${sha:0:11}" >> "$GITHUB_OUTPUT"
+
+            - uses: docker/setup-buildx-action@4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd # v4.0.0
+
+            - uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 # v4.1.0
+              with:
+                  username: ${{ vars.DOCKERHUB_USERNAME }}
+                  password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+            # No build secret is passed, so the Dockerfile's source map upload to PostHog is skipped.
+            - name: Build and push
+              uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+              with:
+                  context: .
+                  file: Dockerfile
+                  platforms: linux/amd64
+                  push: true
+                  build-args: COMMIT_HASH=${{ steps.tags.outputs.sha }}
+                  tags: |
+                      ${{ env.IMAGE }}:selfhost
+                      ${{ env.IMAGE }}:${{ steps.tags.outputs.dated }}
+
+            - name: Check that both tags share one digest
+              env:
+                  DATED: ${{ steps.tags.outputs.dated }}
+              run: |
+                  latest="$(docker buildx imagetools inspect "$IMAGE:selfhost" --format '{{json .Manifest.Digest}}')"
+                  dated="$(docker buildx imagetools inspect "$IMAGE:$DATED" --format '{{json .Manifest.Digest}}')"
+                  echo "selfhost: $latest"
+                  echo "$DATED: $dated"
+                  [ "$latest" = "$dated" ]
+                  echo "### Pushed \`$IMAGE:$DATED\` and \`:selfhost\` ($dated)" >> "$GITHUB_STEP_SUMMARY"
