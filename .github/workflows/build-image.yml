@@ -18,7 +18,7 @@ permissions:
     contents: read
 
 env:
-    SOURCE_REPOSITORY: moramin/posthog
+    SOURCE_REPOSITORY: lvlohammadi/posthog
     IMAGE: docker.io/${{ vars.DOCKERHUB_USERNAME }}/posthog-selfhost
 
 jobs:

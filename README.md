@@ -1,6 +1,6 @@
 # posthog-selfhost-build
 
-Builds the self-hosted PostHog image from [moramin/posthog](https://github.com/moramin/posthog) and pushes it to Docker Hub.
+Builds the self-hosted PostHog image from [lvlohammadi/posthog](https://github.com/lvlohammadi/posthog) and pushes it to Docker Hub.
 
 The build runs only when started by hand: Actions, "Build self-hosted image", "Run workflow".
 The fork keeps GitHub Actions switched off, so upstream PostHog changes never start a run or send a notification.
