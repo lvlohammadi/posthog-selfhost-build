@@ -2,7 +2,7 @@ name: Mirror image to ghcr.io
 
 # Manual runs only. Copies one tag of the self-hosted image from Docker Hub to the GitHub
 # Container Registry, registry to registry, so no layer is downloaded to a machine.
-# The digest stays the same. A host that cannot reach Docker Hub's download hosts pulls from ghcr.io.
+# The image layers and manifests stay the same. A host that cannot reach Docker Hub's download hosts pulls from ghcr.io.
 on:
     workflow_dispatch:
         inputs:
@@ -41,16 +41,20 @@ jobs:
                   TAG: ${{ inputs.tag }}
               run: |
                   target="$(echo "$TARGET_IMAGE" | tr '[:upper:]' '[:lower:]')"
-                  docker buildx imagetools create --tag "$target:$TAG" "$SOURCE_IMAGE:$TAG"
+                  # The source label links a new package to this repository, so the workflow token may create it.
+                  docker buildx imagetools create \
+                      --annotation "index:org.opencontainers.image.source=https://github.com/${{ github.repository }}" \
+                      --tag "$target:$TAG" "$SOURCE_IMAGE:$TAG"
 
-            - name: Check that the digest is unchanged
+            - name: Check that the image manifests are unchanged
               env:
                   TAG: ${{ inputs.tag }}
               run: |
                   target="$(echo "$TARGET_IMAGE" | tr '[:upper:]' '[:lower:]')"
-                  source_digest="$(docker buildx imagetools inspect "$SOURCE_IMAGE:$TAG" --format '{{json .Manifest.Digest}}')"
-                  target_digest="$(docker buildx imagetools inspect "$target:$TAG" --format '{{json .Manifest.Digest}}')"
-                  echo "docker hub: $source_digest"
-                  echo "ghcr.io:    $target_digest"
-                  [ "$source_digest" = "$target_digest" ]
-                  echo "### Copied \`$target:$TAG\` ($target_digest)" >> "$GITHUB_STEP_SUMMARY"
+                  source_manifests="$(docker buildx imagetools inspect "$SOURCE_IMAGE:$TAG" --raw | jq -r '.manifests[].digest' | sort)"
+                  target_manifests="$(docker buildx imagetools inspect "$target:$TAG" --raw | jq -r '.manifests[].digest' | sort)"
+                  echo "docker hub manifests:"; echo "$source_manifests"
+                  echo "ghcr.io manifests:"; echo "$target_manifests"
+                  [ -n "$source_manifests" ] && [ "$source_manifests" = "$target_manifests" ]
+                  digest="$(docker buildx imagetools inspect "$target:$TAG" --format '{{json .Manifest.Digest}}')"
+                  echo "### Copied \`$target:$TAG\` (index $digest)" >> "$GITHUB_STEP_SUMMARY"
