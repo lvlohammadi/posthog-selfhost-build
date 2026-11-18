@@ -1,8 +1,9 @@
-name: Mirror image to ghcr.io
+name: Mirror image to ghcr.io or Docker Hub
 
-# Manual runs only. Copies one image from another registry to the GitHub Container Registry,
-# registry to registry, so no layer is downloaded to a machine. The image manifests stay the same.
-# A host that cannot reach the source registry pulls from ghcr.io instead.
+# Manual runs only. Copies one image from another registry to the GitHub Container Registry or to
+# Docker Hub, registry to registry, so no layer is downloaded to a machine. The image manifests
+# stay the same. A host that cannot reach the source registry, or reaches it slowly, pulls from the
+# target instead.
 on:
     workflow_dispatch:
         inputs:
@@ -15,6 +16,13 @@ on:
             target_tag:
                 description: Tag in the target package
                 required: true
+            target_registry:
+                description: Where to copy the image
+                type: choice
+                options:
+                    - ghcr
+                    - dockerhub
+                default: ghcr
 
 concurrency:
     group: ${{ github.workflow }}
@@ -33,10 +41,17 @@ jobs:
             - uses: docker/setup-buildx-action@4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd # v4.0.0
 
             - uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 # v4.1.0
+              if: ${{ inputs.target_registry == 'ghcr' }}
               with:
                   registry: ghcr.io
                   username: ${{ github.actor }}
                   password: ${{ secrets.GITHUB_TOKEN }}
+
+            - uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 # v4.1.0
+              if: ${{ inputs.target_registry == 'dockerhub' }}
+              with:
+                  username: ${{ vars.DOCKERHUB_USERNAME }}
+                  password: ${{ secrets.DOCKERHUB_TOKEN }}
 
             - name: Copy the image
               env:
@@ -45,8 +60,14 @@ jobs:
                   TARGET_TAG: ${{ inputs.target_tag }}
                   OWNER: ${{ github.repository_owner }}
                   REPO: ${{ github.repository }}
+                  REGISTRY: ${{ inputs.target_registry }}
+                  DOCKERHUB_USERNAME: ${{ vars.DOCKERHUB_USERNAME }}
               run: |
-                  target="ghcr.io/$(echo "$OWNER" | tr '[:upper:]' '[:lower:]')/$TARGET_NAME:$TARGET_TAG"
+                  if [ "$REGISTRY" = dockerhub ]; then
+                      target="docker.io/$DOCKERHUB_USERNAME/$TARGET_NAME:$TARGET_TAG"
+                  else
+                      target="ghcr.io/$(echo "$OWNER" | tr '[:upper:]' '[:lower:]')/$TARGET_NAME:$TARGET_TAG"
+                  fi
                   echo "TARGET=$target" >> "$GITHUB_ENV"
                   # The source label links a new package to this repository, so the workflow token may create it.
                   docker buildx imagetools create \
