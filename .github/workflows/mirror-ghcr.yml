@@ -24,8 +24,10 @@ on:
                     - dockerhub
                 default: ghcr
 
+# One group per target, so copies of different images run side by side and only a repeat of the
+# same copy waits.
 concurrency:
-    group: ${{ github.workflow }}
+    group: ${{ github.workflow }}-${{ inputs.target_registry }}-${{ inputs.target_name }}-${{ inputs.target_tag }}
     cancel-in-progress: false
 
 permissions:
