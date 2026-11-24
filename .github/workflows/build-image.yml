@@ -44,6 +44,17 @@ jobs:
                   sudo docker image prune --all --force
                   df -h /
 
+            # The frontend build needs more than the runner's 16 GB of memory, and the runner has no swap.
+            - name: Add swap space
+              run: |
+                  sudo swapoff -a || true
+                  sudo fallocate -l 16G /mnt/build-swapfile
+                  sudo chmod 600 /mnt/build-swapfile
+                  sudo mkswap /mnt/build-swapfile
+                  sudo swapon /mnt/build-swapfile
+                  free -h
+                  df -h /mnt
+
             - name: Check out the fork
               uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
               with:
