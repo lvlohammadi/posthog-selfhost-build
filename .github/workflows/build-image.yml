@@ -69,7 +69,13 @@ jobs:
                   echo "sha=$sha" >> "$GITHUB_OUTPUT"
                   echo "dated=sync-$(date -u +%Y%m%d)-${sha:0:11}" >> "$GITHUB_OUTPUT"
 
+            # BuildKit builds independent Dockerfile stages at the same time, and the frontend, Node and
+            # Python stages together need more memory than the runner has. Two at a time fits.
             - uses: docker/setup-buildx-action@4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd # v4.0.0
+              with:
+                  buildkitd-config-inline: |
+                      [worker.oci]
+                        max-parallelism = 2
 
             - uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 # v4.1.0
               with:
